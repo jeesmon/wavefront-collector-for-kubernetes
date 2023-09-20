@@ -30,6 +30,8 @@ import (
 	v1listers "k8s.io/client-go/listers/core/v1"
 )
 
+var FILTERED_ANNOTATIONS = []string{"sbu.vmware.com/owner", "sbu.vmware.com/sguid"}
+
 type PodBasedEnricher struct {
 	podLister          v1listers.PodLister
 	labelCopier        *util.LabelCopier
@@ -107,6 +109,7 @@ func (pbe *PodBasedEnricher) addContainerInfo(key metrics.ResourceKey, container
 
 	containerMs.Labels[metrics.LabelPodId.Key] = string(pod.UID)
 	pbe.labelCopier.Copy(pod.Labels, containerMs.Labels)
+	pbe.labelCopier.Copy(filterAnnotations(pod.Annotations), containerMs.Labels)
 
 	namespace := containerMs.Labels[metrics.LabelNamespaceName.Key]
 	podName := containerMs.Labels[metrics.LabelPodName.Key]
@@ -149,6 +152,7 @@ func (pbe *PodBasedEnricher) addPodInfo(podMs *metrics.Set, pod *kube_api.Pod, b
 		podMs.EntityCreateTime = pod.Status.StartTime.Time
 	}
 	pbe.labelCopier.Copy(pod.Labels, podMs.Labels)
+	pbe.labelCopier.Copy(filterAnnotations(pod.Annotations), podMs.Labels)
 
 	// Add pod phase
 	addLabeledIntMetric(podMs, &metrics.MetricPodPhase, map[string]string{"phase": string(pod.Status.Phase)}, util.ConvertPodPhase(pod.Status.Phase))
@@ -179,6 +183,7 @@ func (pbe *PodBasedEnricher) addPodInfo(podMs *metrics.Set, pod *kube_api.Pod, b
 			EntityCreateTime: podMs.CollectionStartTime,
 		}
 		pbe.labelCopier.Copy(pod.Labels, containerMs.Labels)
+		pbe.labelCopier.Copy(filterAnnotations(pod.Annotations), containerMs.Labels)
 		updateContainerResourcesAndLimits(containerMs, container)
 		newMs[containerKey] = containerMs
 	}
@@ -307,4 +312,14 @@ func NewPodBasedEnricher(podLister v1listers.PodLister, labelCopier *util.LabelC
 		labelCopier:        labelCopier,
 		collectionInterval: collectionInterval,
 	}
+}
+
+func filterAnnotations(annotations map[string]string) map[string]string {
+	filtered := make(map[string]string)
+	for _, key := range FILTERED_ANNOTATIONS {
+		if val, ok := annotations[key]; ok {
+			filtered[key] = val
+		}
+	}
+	return filtered
 }
